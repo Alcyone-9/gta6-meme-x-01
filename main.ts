@@ -13,7 +13,7 @@
 // Local check:
 //   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 function abort(reason: string): never {
@@ -29,6 +29,31 @@ const target = join(outDir, "POST.json");
 
 if (!existsSync(source)) {
   abort(`no POST.json found at ${source} - nothing to hand in`);
+}
+
+// Fail loudly here, in our own run, rather than letting the gate refuse a
+// malformed hand-in later: POST.json must parse and name an X post address
+// of the shape the bounty accepts (x.com or twitter.com, digits-only id).
+// The copy below still hands the file over byte for byte, untouched.
+let parsed: unknown;
+try {
+  parsed = JSON.parse(readFileSync(source, "utf8"));
+} catch (err) {
+  abort(`POST.json is not valid JSON: ${(err as Error).message}`);
+}
+const named =
+  parsed !== null && typeof parsed === "object"
+    ? (parsed as { url?: unknown }).url
+    : undefined;
+if (
+  typeof named !== "string" ||
+  !/^https:\/\/(www\.|mobile\.)?(x\.com|twitter\.com)\/[^/]+\/status\/\d+\/?(\?.*)?$/.test(
+    named,
+  )
+) {
+  abort(
+    `POST.json does not name an X post address (got ${JSON.stringify(named)})`,
+  );
 }
 
 mkdirSync(outDir, { recursive: true });
